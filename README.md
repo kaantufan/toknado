@@ -1,6 +1,17 @@
 # 🌪️ Toknado
 
+[![npm](https://img.shields.io/npm/v/toknado)](https://www.npmjs.com/package/toknado)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![node >= 18](https://img.shields.io/badge/node-%E2%89%A5%2018-brightgreen)](package.json)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-blue)](package.json)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-ff69b4)](CONTRIBUTING.md)
+
 > **A tornado of tokens.** See exactly what your coding agents devour — Claude Code *and* Codex, one dashboard, 100% local.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img alt="Toknado dashboard — daily tokens, model share, modes and real Codex quota" src="docs/screenshot-light.png">
+</picture>
 
 Toknado reads the session logs that Claude Code (`~/.claude`) and Codex CLI (`~/.codex`) already write to your machine, and turns them into a fast local dashboard. No accounts, no uploads, no telemetry, no database. Close the tab and nothing remains but your logs.
 
@@ -74,6 +85,10 @@ npx toknado --pricing my-prices.json
 ## Requirements
 
 Node.js ≥ 18. Zero dependencies.
+
+## Contributing
+
+Contributions are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Good first areas: new log formats (other agent CLIs), chart ideas, and pricing-table updates.
 
 ## License
 

@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "🌪️ A tornado of tokens — local, private usage dashboard for Claude Code & Codex CLI logs",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kaantufan/toknado.git"
+  },
+  "homepage": "https://github.com/kaantufan/toknado#readme",
+  "bugs": {
+    "url": "https://github.com/kaantufan/toknado/issues"
+  },
   "type": "module",
   "bin": {
     "toknado": "bin/toknado.js"
@@ -11,6 +19,7 @@
     "bin",
     "src",
     "web",
+    "docs",
     "README.md",
     "LICENSE"
   ],

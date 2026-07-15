@@ -278,8 +278,13 @@ let DATA = null;
 /* ---------- theme ---------- */
 const root = document.documentElement;
 function applyTheme(t) { root.dataset.theme = t; localStorage.setItem('toknado-theme', t); }
-applyTheme(localStorage.getItem('toknado-theme') ??
-  (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+// ?theme=dark|light overrides (handy for screenshots and kiosk setups)
+const themeParam = new URLSearchParams(location.search).get('theme');
+applyTheme(
+  (themeParam === 'dark' || themeParam === 'light' ? themeParam : null) ??
+    localStorage.getItem('toknado-theme') ??
+    (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+);
 document.getElementById('themeToggle').onclick = () => {
   applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
   if (DATA) render(); // charts read palette values at render time
