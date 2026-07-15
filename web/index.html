@@ -289,6 +289,12 @@ document.getElementById('themeToggle').onclick = () => {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (n) => (n ?? 0).toLocaleString('en-US');
+// Local-date key, matching the server's day bucketing (never toISOString —
+// that's UTC and shifts dates for anyone east/west of Greenwich).
+const dayKey = (ts) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 function compact(n) {
   n = n ?? 0;
   if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 1 : 2) + 'B';
@@ -340,17 +346,27 @@ function topRect(x, y, w, h, r) {
 }
 
 /* ---------- fetch + render ---------- */
+function showLoadError(err) {
+  document.getElementById('tiles').innerHTML =
+    `<div class="tile"><div class="label">Error</div><div class="sub">${esc(err.message)}</div></div>`;
+}
 async function load() {
+  if (state.range === 'custom' && !state.since) return; // dates not applied yet
   const params = new URLSearchParams();
-  if (state.range === 'custom' && state.since) {
+  if (state.range === 'custom') {
     params.set('since', state.since);
     params.set('until', state.until);
   } else params.set('range', state.range);
   if (state.source) params.set('source', state.source);
 
-  const res = await fetch('/api/data?' + params);
-  DATA = await res.json();
-  render();
+  try {
+    const res = await fetch('/api/data?' + params);
+    if (!res.ok) throw new Error(`server responded ${res.status}: ${await res.text()}`);
+    DATA = await res.json();
+    render();
+  } catch (err) {
+    showLoadError(err);
+  }
 }
 
 function exportUrl(format) {
@@ -375,9 +391,14 @@ function segWire(id, attr, cb) {
   });
 }
 segWire('rangeSeg', 'range', (r) => {
-  state.range = r;
   document.getElementById('customRange').style.display = r === 'custom' ? '' : 'none';
-  if (r !== 'custom') { state.since = state.until = null; load(); }
+  // 'custom' takes effect only when dates are applied; until then the last
+  // concrete range keeps serving data.
+  if (r !== 'custom') {
+    state.range = r;
+    state.since = state.until = null;
+    load();
+  }
 });
 segWire('sourceSeg', 'source', (s) => { state.source = s; load(); });
 segWire('dailyModeSeg', 'mode', (m) => { state.dailyMode = m; renderDaily(); });
@@ -385,16 +406,21 @@ document.getElementById('applyRange').onclick = () => {
   const f = document.getElementById('dateFrom').value;
   const t = document.getElementById('dateTo').value;
   if (!f || !t) return;
+  state.range = 'custom';
   state.since = new Date(f + 'T00:00:00').getTime();
   state.until = new Date(t + 'T23:59:59.999').getTime();
   load();
 };
 document.querySelectorAll('[data-export]').forEach((b) => {
-  b.onclick = () => { location.href = exportUrl(b.dataset.export); };
+  b.onclick = () => {
+    if (state.range === 'custom' && !state.since) return; // dates not applied yet
+    location.href = exportUrl(b.dataset.export);
+  };
 });
 
 /* ---------- render ---------- */
 function render() {
+  hideTip(); // the DOM under any open tooltip is about to be replaced
   renderTiles();
   renderDaily();
   renderDonut();
@@ -411,9 +437,7 @@ function render() {
 function renderTiles() {
   const t = DATA.totals;
   const r = DATA.range;
-  const rangeTxt = r.since
-    ? `${new Date(r.since).toISOString().slice(0, 10)} → ${new Date(r.until).toISOString().slice(0, 10)}`
-    : 'no data in range';
+  const rangeTxt = r.since ? `${dayKey(r.since)} → ${dayKey(r.until)}` : 'no data in range';
   const tiles = [
     ['Total tokens', compact(t.total), rangeTxt],
     ['Output', compact(t.output), pctTxt(t.output, t.total) + ' of total'],
@@ -429,10 +453,31 @@ function renderTiles() {
 const pctTxt = (p, w) => (w ? ((p / w) * 100).toFixed(1) : '0') + '%';
 
 /* ---- daily stacked bars ---- */
+// Fill calendar gaps so idle days render as empty slots instead of collapsing
+// non-adjacent dates next to each other.
+function fillDayGaps(days) {
+  if (days.length < 2) return days;
+  const byDay = new Map(days.map((d) => [d.day, d]));
+  const last = days[days.length - 1].day;
+  const out = [];
+  let t = new Date(days[0].day + 'T12:00:00').getTime();
+  for (let guard = 0; guard < 40000; guard++) {
+    const key = dayKey(t);
+    out.push(
+      byDay.get(key) ?? { day: key, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, events: 0, sharePct: 0, sources: {} },
+    );
+    if (key === last) break;
+    t += 86400000;
+  }
+  return out;
+}
+
 function renderDaily() {
+  if (!DATA) return; // mode toggle clicked before first load resolved
+  hideTip();
   const el = document.getElementById('dailyChart');
   const legendEl = document.getElementById('dailyLegend');
-  const days = DATA.days;
+  const days = fillDayGaps(DATA.days);
   if (!days.length) { el.innerHTML = '<div class="empty">No usage in this range 🌵</div>'; legendEl.innerHTML = ''; return; }
 
   let series;
@@ -544,14 +589,18 @@ function renderDonut() {
       stroke-width="${thick}" data-tip="${esc(tipRows(it.model, [['Tokens', fmt(it.total)], ['Share', it.sharePct + '%'], ['Output', fmt(it.output)]]))}"></path>`;
     angle = a2;
   }
-  // 2px surface gaps between arcs
-  angle = -Math.PI / 2;
-  for (const it of items) {
-    const a2 = angle + (it.total / totalAll) * Math.PI * 2;
-    svg += `<line x1="${cx + Math.cos(angle) * (r - thick / 2 - 1)}" y1="${cy + Math.sin(angle) * (r - thick / 2 - 1)}"
-      x2="${cx + Math.cos(angle) * (r + thick / 2 + 1)}" y2="${cy + Math.sin(angle) * (r + thick / 2 + 1)}"
-      stroke="var(--surface)" stroke-width="2"></line>`;
-    angle = a2;
+  // 2px surface gaps between arcs (only meaningful with 2+ visible slices)
+  if (items.filter((it) => it.total > 0).length > 1) {
+    angle = -Math.PI / 2;
+    for (const it of items) {
+      const a2 = angle + (it.total / totalAll) * Math.PI * 2;
+      if (it.total > 0) {
+        svg += `<line x1="${cx + Math.cos(angle) * (r - thick / 2 - 1)}" y1="${cy + Math.sin(angle) * (r - thick / 2 - 1)}"
+          x2="${cx + Math.cos(angle) * (r + thick / 2 + 1)}" y2="${cy + Math.sin(angle) * (r + thick / 2 + 1)}"
+          stroke="var(--surface)" stroke-width="2"></line>`;
+      }
+      angle = a2;
+    }
   }
   svg += `<text x="${cx}" y="${cy - 4}" text-anchor="middle" style="font-size:20px;font-weight:600;fill:var(--ink)">${compact(totalAll)}</text>`;
   svg += `<text x="${cx}" y="${cy + 14}" text-anchor="middle">tokens</text>`;
@@ -631,8 +680,8 @@ function renderQuota() {
   svg += `<circle cx="${x(last.ts)}" cy="${y(last.usedPercent)}" r="4" fill="${cssVar('--c-quota')}" stroke="var(--surface)" stroke-width="2"></circle>`;
   svg += `<text class="val" x="${Math.min(x(last.ts), W - padR - 4)}" y="${y(last.usedPercent) - 8}" text-anchor="end" style="fill:var(--ink);font-weight:600">${last.usedPercent}%</text>`;
   // date labels
-  svg += `<text x="${padL}" y="${H - 6}">${new Date(t0).toISOString().slice(5, 10)}</text>`;
-  svg += `<text x="${W - padR}" y="${H - 6}" text-anchor="end">${new Date(t1).toISOString().slice(5, 10)}</text>`;
+  svg += `<text x="${padL}" y="${H - 6}">${dayKey(t0).slice(5)}</text>`;
+  svg += `<text x="${W - padR}" y="${H - 6}" text-anchor="end">${dayKey(t1).slice(5)}</text>`;
   // hover: nearest sample
   svg += `<rect x="${padL}" y="${padT}" width="${innerW}" height="${innerH}" fill="transparent" id="quotaHover"></rect>`;
   svg += '</svg>';
@@ -664,7 +713,7 @@ function renderHeatmap() {
   for (let d = new Date(start); d <= last; ) {
     const week = [];
     for (let i = 0; i < 7; i++) {
-      const key = d.toISOString().slice(0, 10);
+      const key = dayKey(d.getTime());
       week.push({ key, data: byDay.get(key) ?? null, inRange: d >= first && d <= last });
       d = new Date(d.getTime() + 86400000);
     }
@@ -739,7 +788,7 @@ function renderSessions() {
         <td>${esc(s.project)}</td>
         <td class="mono" title="${esc(s.sessionId)}">${esc(s.sessionId.slice(0, 8))}…</td>
         <td class="mono">${esc(s.models.map(shortModel).join(', '))}</td>
-        <td class="mono">${s.firstTs ? new Date(s.firstTs).toISOString().slice(0, 10) : '—'}</td>
+        <td class="mono">${s.firstTs ? dayKey(s.firstTs) : '—'}</td>
         <td class="num">${fmt(s.total)}</td>
         <td class="num">${fmt(s.output)}</td>
         <td class="num bar-cell">${s.sharePct}%<span class="share-bar" style="width:${(s.sharePct / maxShare) * 90}%"></span></td>

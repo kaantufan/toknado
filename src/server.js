@@ -5,7 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { aggregate, resolveRange } from './aggregate.js';
+import { aggregate, resolveRange, toDayKey } from './aggregate.js';
 import { costComparison } from './pricing.js';
 import { toJSON, toCSV, toMarkdown } from './export.js';
 
@@ -30,15 +30,17 @@ export function startServer({ port, loadData, userPrices }) {
         return d;
       }).catch((err) => {
         loading = null;
-        throw err;
+        // Cold start (requests are awaiting this promise): surface the error.
+        // Background refresh with a stale cache: keep serving the stale data.
+        if (!cache) throw err;
       });
     }
     return cache ?? loading;
   }
 
   const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://localhost');
     try {
+      const url = new URL(req.url, 'http://localhost');
       if (url.pathname === '/' || url.pathname === '/index.html') {
         const html = fs.readFileSync(path.join(WEB_DIR, 'index.html'));
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -62,7 +64,7 @@ export function startServer({ port, loadData, userPrices }) {
         const agg = aggregate(d.events, d.rateLimits, filter);
         const comparison = costComparison(agg.models, agg.totals, userPrices);
         const format = url.searchParams.get('format') ?? 'json';
-        const stamp = new Date().toISOString().slice(0, 10);
+        const stamp = toDayKey(Date.now());
         const send = (body, type, ext) => {
           res.writeHead(200, {
             'content-type': type,

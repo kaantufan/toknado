@@ -2,18 +2,40 @@
 // clicks Export — and even then the file goes wherever their browser saves
 // downloads. Toknado itself keeps no state between runs.
 
+import { toDayKey } from './aggregate.js';
+
+// Log-derived strings (project names, session ids, models) end up inside
+// Markdown tables and CSV cells — neutralize the separators they could break.
+const mdSafe = (s) => String(s ?? '').replace(/[\r\n]+/g, ' ').replace(/\|/g, '\\|');
+const csvSafe = (s) => {
+  const v = String(s ?? '');
+  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
+
 export function toJSON(agg, comparison) {
   return JSON.stringify({ generatedAt: new Date().toISOString(), ...agg, costComparison: comparison }, null, 2);
 }
 
 export function toCSV(agg) {
-  const lines = ['day,input,output,cache_read,cache_write,total,share_pct,events'];
+  const L = [];
+  const row = (...cells) => L.push(cells.map(csvSafe).join(','));
+  row('section', 'key', 'source', 'input', 'output', 'cache_read', 'cache_write', 'total', 'share_pct', 'events');
   for (const d of agg.days) {
-    lines.push(
-      [d.day, d.input, d.output, d.cacheRead, d.cacheWrite, d.total, d.sharePct, d.events].join(','),
-    );
+    row('day', d.day, '', d.input, d.output, d.cacheRead, d.cacheWrite, d.total, d.sharePct, d.events);
   }
-  return lines.join('\n') + '\n';
+  for (const m of agg.models) {
+    row('model', m.model, '', m.input, m.output, m.cacheRead, m.cacheWrite, m.total, m.sharePct, m.events);
+  }
+  for (const m of agg.modes) {
+    row('mode', m.mode, m.source, m.input, m.output, m.cacheRead, m.cacheWrite, m.total, m.sharePct, m.events);
+  }
+  for (const s of agg.sessions) {
+    row('session', `${s.project}/${s.sessionId}`, s.source, s.input, s.output, s.cacheRead, s.cacheWrite, s.total, s.sharePct, s.events);
+  }
+  for (const p of agg.projects) {
+    row('project', p.project, p.source, p.input, p.output, p.cacheRead, p.cacheWrite, p.total, p.sharePct, p.events);
+  }
+  return L.join('\n') + '\n';
 }
 
 export function toMarkdown(agg, comparison) {
@@ -24,7 +46,7 @@ export function toMarkdown(agg, comparison) {
   L.push('');
   L.push(`Generated: ${new Date().toISOString()}`);
   if (agg.range.since) {
-    L.push(`Range: ${new Date(agg.range.since).toISOString().slice(0, 10)} → ${new Date(agg.range.until).toISOString().slice(0, 10)} (${agg.range.activeDays} active days)`);
+    L.push(`Range: ${toDayKey(agg.range.since)} → ${toDayKey(agg.range.until)} (${agg.range.activeDays} active days)`);
   }
   L.push('');
   L.push('## Totals');
@@ -44,13 +66,13 @@ export function toMarkdown(agg, comparison) {
   L.push('');
   L.push('| Model | Total | Share | Output |');
   L.push('|---|---:|---:|---:|');
-  for (const m of agg.models) L.push(`| ${m.model} | ${fmt(m.total)} | ${m.sharePct}% | ${fmt(m.output)} |`);
+  for (const m of agg.models) L.push(`| ${mdSafe(m.model)} | ${fmt(m.total)} | ${m.sharePct}% | ${fmt(m.output)} |`);
   L.push('');
   L.push('## By mode');
   L.push('');
   L.push('| Source | Mode | Total | Share |');
   L.push('|---|---|---:|---:|');
-  for (const m of agg.modes) L.push(`| ${m.source} | ${m.mode} | ${fmt(m.total)} | ${m.sharePct}% |`);
+  for (const m of agg.modes) L.push(`| ${m.source} | ${mdSafe(m.mode)} | ${fmt(m.total)} | ${m.sharePct}% |`);
   L.push('');
   L.push('## Daily');
   L.push('');
@@ -63,7 +85,7 @@ export function toMarkdown(agg, comparison) {
   L.push('| Source | Project | Session | Total | Share |');
   L.push('|---|---|---|---:|---:|');
   for (const s of agg.sessions.slice(0, 20)) {
-    L.push(`| ${s.source} | ${s.project} | ${s.sessionId.slice(0, 8)}… | ${fmt(s.total)} | ${s.sharePct}% |`);
+    L.push(`| ${s.source} | ${mdSafe(s.project)} | ${mdSafe(s.sessionId).slice(0, 8)}… | ${fmt(s.total)} | ${s.sharePct}% |`);
   }
   if (comparison) {
     L.push('');

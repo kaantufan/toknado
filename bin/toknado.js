@@ -114,10 +114,16 @@ async function main() {
 }
 
 function openBrowser(url) {
-  const cmd =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  // win32: `start` is a cmd built-in, not an executable; the empty '' is the
+  // window-title argument so the URL isn't swallowed as a title.
+  const [cmd, cmdArgs] =
+    process.platform === 'darwin' ? ['open', [url]]
+    : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
+    : ['xdg-open', [url]];
   try {
-    spawn(cmd, [url], { stdio: 'ignore', detached: true }).unref();
+    const child = spawn(cmd, cmdArgs, { stdio: 'ignore', detached: true });
+    child.on('error', () => { /* non-fatal: could not open a browser */ });
+    child.unref();
   } catch {
     /* non-fatal */
   }

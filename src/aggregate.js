@@ -2,8 +2,6 @@
 // All computation happens in memory on every request — Toknado never persists
 // anything; the CLI logs themselves are the only source of truth.
 
-const DAY_MS = 86_400_000;
-
 export function toDayKey(ts) {
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -98,8 +96,14 @@ export function aggregate(events, rateLimits, filter = {}) {
   const modes = [...byMode.entries()]
     .sort(([, a], [, b]) => b.total - a.total)
     .map(([key, b]) => {
-      const [src, mode] = key.split('|');
-      return { source: src, mode, ...plain(b), sharePct: pct(b.total, grand) };
+      // split at the FIRST separator only — mode values may contain '|'
+      const i = key.indexOf('|');
+      return {
+        source: key.slice(0, i),
+        mode: key.slice(i + 1),
+        ...plain(b),
+        sharePct: pct(b.total, grand),
+      };
     });
 
   const sessions = [...bySession.entries()]
@@ -107,7 +111,7 @@ export function aggregate(events, rateLimits, filter = {}) {
     .slice(0, 50)
     .map(([key, b]) => ({
       source: b.source,
-      sessionId: key.split('|')[1],
+      sessionId: key.slice(key.indexOf('|') + 1),
       project: b.project,
       models: b.models ? [...b.models] : [],
       firstTs: b.firstTs,
@@ -121,7 +125,7 @@ export function aggregate(events, rateLimits, filter = {}) {
     .slice(0, 30)
     .map(([key, b]) => ({
       source: b.source,
-      project: key.split('|')[1],
+      project: key.slice(key.indexOf('|') + 1),
       ...plain(b),
       sharePct: pct(b.total, grand),
     }));
@@ -132,9 +136,21 @@ export function aggregate(events, rateLimits, filter = {}) {
     sharePct: pct(b.total, grand),
   }));
 
-  // Codex quota timeline, filtered to range, downsampled to ≤ 500 points
+  // Codex quota timeline: keep the dominant rate-limit series only (Codex
+  // logs can interleave several limit_ids; mixing them zigzags the chart),
+  // filter to range, downsample to ≤ 500 points.
+  const inRange = rateLimits.filter((r) => r.ts >= since && r.ts <= until);
+  const seriesCounts = new Map();
+  for (const r of inRange) {
+    const id = r.limitId ?? 'default';
+    seriesCounts.set(id, (seriesCounts.get(id) ?? 0) + 1);
+  }
+  let dominant = null;
+  for (const [id, n] of seriesCounts) {
+    if (dominant == null || n > seriesCounts.get(dominant)) dominant = id;
+  }
   const quota = downsample(
-    rateLimits.filter((r) => r.ts >= since && r.ts <= until),
+    inRange.filter((r) => (r.limitId ?? 'default') === dominant),
     500,
   );
 
@@ -192,6 +208,7 @@ function downsample(arr, max) {
   const step = arr.length / max;
   const out = [];
   for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]);
+  out[out.length - 1] = arr[arr.length - 1]; // always keep the newest sample
   return out;
 }
 
@@ -201,7 +218,13 @@ export function resolveRange(preset, now = Date.now()) {
   endOfToday.setHours(23, 59, 59, 999);
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
-  const day = (n) => startOfToday.getTime() - (n - 1) * DAY_MS;
+  // Local-calendar arithmetic (setDate) — a fixed 24h multiple drifts an hour
+  // across DST transitions.
+  const day = (n) => {
+    const d = new Date(startOfToday);
+    d.setDate(d.getDate() - (n - 1));
+    return d.getTime();
+  };
 
   switch (preset) {
     case 'today':

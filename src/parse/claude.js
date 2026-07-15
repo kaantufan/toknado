@@ -9,9 +9,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 
-/** Recursively collect *.jsonl files under a directory. */
-export function collectJsonlFiles(dir) {
+/**
+ * Recursively collect *.jsonl files under a directory.
+ * Follows symlinks (some setups relocate ~/.claude onto another disk) while
+ * guarding against cycles and aliased directories via realpath.
+ */
+export function collectJsonlFiles(dir, seenDirs = new Set()) {
   const out = [];
+  let real;
+  try {
+    real = fs.realpathSync(dir);
+  } catch {
+    return out;
+  }
+  if (seenDirs.has(real)) return out; // cycle / aliased-dir guard
+  seenDirs.add(real);
+
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -20,8 +33,19 @@ export function collectJsonlFiles(dir) {
   }
   for (const e of entries) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...collectJsonlFiles(p));
-    else if (e.isFile() && e.name.endsWith('.jsonl')) out.push(p);
+    let isDir = e.isDirectory();
+    let isFile = e.isFile();
+    if (e.isSymbolicLink()) {
+      try {
+        const st = fs.statSync(p); // follows the link
+        isDir = st.isDirectory();
+        isFile = st.isFile();
+      } catch {
+        continue; // broken link
+      }
+    }
+    if (isDir) out.push(...collectJsonlFiles(p, seenDirs));
+    else if (isFile && e.name.endsWith('.jsonl')) out.push(p);
   }
   return out;
 }
@@ -43,59 +67,60 @@ export async function parseClaudeLogs(baseDir) {
 }
 
 async function parseFile(file, events, seen) {
-  let stream;
-  try {
-    stream = fs.createReadStream(file, { encoding: 'utf8' });
-  } catch {
-    return;
-  }
+  const stream = fs.createReadStream(file, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
-  for await (const line of rl) {
-    if (!line.includes('"usage"')) continue; // fast pre-filter
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
+  try {
+    for await (const line of rl) {
+      if (!line.includes('"usage"')) continue; // fast pre-filter
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (entry.type !== 'assistant') continue;
+      const msg = entry.message;
+      const usage = msg?.usage;
+      if (!usage) continue;
+
+      const model = msg.model || 'unknown';
+      if (model === '<synthetic>') continue; // internal placeholder entries
+
+      // Dedupe: same API response can be recorded multiple times (streaming
+      // re-logs within a file, forked/resumed sessions across files).
+      const key = `${msg.id ?? ''}:${entry.requestId ?? ''}`;
+      if (key !== ':') {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+
+      const ts = Date.parse(entry.timestamp ?? '') || 0;
+      if (!ts) continue;
+
+      const input = usage.input_tokens ?? 0;
+      const output = usage.output_tokens ?? 0;
+      const cacheRead = usage.cache_read_input_tokens ?? 0;
+      const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+      if (input + output + cacheRead + cacheWrite === 0) continue;
+
+      events.push({
+        source: 'claude',
+        ts,
+        sessionId: entry.sessionId ?? path.basename(file, '.jsonl'),
+        project: projectName(entry.cwd),
+        model,
+        // "mode" for Claude = response speed (fast mode vs standard)
+        mode: usage.speed ? `speed:${usage.speed}` : null,
+        input,
+        output,
+        cacheRead,
+        cacheWrite,
+      });
     }
-    if (entry.type !== 'assistant') continue;
-    const msg = entry.message;
-    const usage = msg?.usage;
-    if (!usage) continue;
-
-    const model = msg.model || 'unknown';
-    if (model === '<synthetic>') continue; // internal placeholder entries
-
-    // Dedupe: same API response can be recorded in multiple session files.
-    const key = `${msg.id ?? ''}:${entry.requestId ?? ''}`;
-    if (key !== ':') {
-      if (seen.has(key)) continue;
-      seen.add(key);
-    }
-
-    const ts = Date.parse(entry.timestamp ?? '') || 0;
-    if (!ts) continue;
-
-    const input = usage.input_tokens ?? 0;
-    const output = usage.output_tokens ?? 0;
-    const cacheRead = usage.cache_read_input_tokens ?? 0;
-    const cacheWrite = usage.cache_creation_input_tokens ?? 0;
-    if (input + output + cacheRead + cacheWrite === 0) continue;
-
-    events.push({
-      source: 'claude',
-      ts,
-      sessionId: entry.sessionId ?? path.basename(file, '.jsonl'),
-      project: projectName(entry.cwd),
-      model,
-      // "mode" for Claude = response speed (fast mode vs standard)
-      mode: usage.speed ? `speed:${usage.speed}` : null,
-      input,
-      output,
-      cacheRead,
-      cacheWrite,
-    });
+  } catch {
+    // File vanished mid-read (log rotation) or is unreadable — keep whatever
+    // was parsed so far and move on.
   }
 }
 

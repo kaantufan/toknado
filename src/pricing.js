@@ -8,8 +8,8 @@
 //
 // Prices are USD per **million** tokens. Cache multipliers follow Anthropic's
 // published economics: reads ≈ 0.1× input price, writes ≈ 1.25× input price.
-// OpenAI-side models ship as null (unknown) — edit `pricing.user.json` next to
-// this file (or pass --pricing <file>) to fill in your own rates.
+// Models without a known list price show as "n/a" — pass --pricing <file>
+// (JSON of per-Mtok prices, merged over DEFAULT_PRICES) to fill in your own.
 
 export const CACHE_READ_MULT = 0.1;
 export const CACHE_WRITE_MULT = 1.25;
@@ -18,6 +18,8 @@ export const CACHE_WRITE_MULT = 1.25;
 export const DEFAULT_PRICES = {
   'claude-fable-5': { input: 10, output: 50 },
   'claude-opus-4': { input: 5, output: 25 }, // 4.6 / 4.7 / 4.8
+  'claude-opus-4-20250514': { input: 15, output: 75 }, // legacy Opus 4 exact ID
+  'claude-opus-4-1': { input: 15, output: 75 }, // legacy Opus 4.1
   'claude-sonnet-5': { input: 3, output: 15 },
   'claude-sonnet-4': { input: 3, output: 15 },
   'claude-haiku-4-5': { input: 1, output: 5 },
