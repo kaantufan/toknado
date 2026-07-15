@@ -64,9 +64,9 @@ export function toMarkdown(agg, comparison) {
   L.push('');
   L.push('## By model');
   L.push('');
-  L.push('| Model | Total | Share | Output |');
-  L.push('|---|---:|---:|---:|');
-  for (const m of agg.models) L.push(`| ${mdSafe(m.model)} | ${fmt(m.total)} | ${m.sharePct}% | ${fmt(m.output)} |`);
+  L.push('| Model | API calls | Total | Share | Output |');
+  L.push('|---|---:|---:|---:|---:|');
+  for (const m of agg.models) L.push(`| ${mdSafe(m.model)} | ${fmt(m.events)} | ${fmt(m.total)} | ${m.sharePct}% | ${fmt(m.output)} |`);
   L.push('');
   L.push('## By mode');
   L.push('');

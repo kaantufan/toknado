@@ -6,7 +6,7 @@
 [![zero dependencies](https://img.shields.io/badge/dependencies-0-blue)](package.json)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-ff69b4)](CONTRIBUTING.md)
 
-> **A tornado of tokens.** See exactly what your coding agents devour — Claude Code *and* Codex, one dashboard, 100% local.
+> **A tornado of tokens.** See exactly what your coding agents devour — Claude Code, Codex *and* GitHub Copilot Chat, one dashboard, 100% local.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
@@ -23,7 +23,8 @@ That's it. Your dashboard opens at `http://127.0.0.1:4141`.
 
 ## What you get
 
-- **📊 One dashboard for both agents** — Claude Code and Codex CLI usage, merged or filtered per source
+- **📊 One dashboard for all your agents** — Claude Code, Codex CLI and GitHub Copilot Chat (VS Code), merged or filtered per source
+- **🔬 Every model, every call** — the All-models table lists each model with API-call counts, avg tokens/call and full usage breakdown
 - **📅 Every range you'd ever ask for** — today, 7 / 14 / 30 days, all time, or a custom date range
 - **📈 Charts, not spreadsheets** — daily stacked bars (by token type or source), model share donut, activity heatmap, busy-hours histogram
 - **🤖 Per-model breakdown** — which model ate how much, with share percentages
@@ -32,13 +33,14 @@ That's it. Your dashboard opens at `http://127.0.0.1:4141`.
 - **% of everything** — every day, session, model, and project shows its share of total usage
 - **🧾 Top sessions leaderboard** — which sessions and projects burned the most
 - **💸 What-if API cost comparison** — what your token mix *would* cost at public API list prices, across model tiers (clearly labeled hypothetical — subscriptions don't bill per token)
+- **📡 Live pricing (opt-in)** — `--live-pricing` fetches current rates for thousands of models from [LiteLLM's public price DB](https://github.com/BerriAI/litellm), so even brand-new models get priced
 - **📤 Export on demand** — JSON, CSV, or Markdown. Nothing is saved unless *you* export it
 
 ## Privacy model
 
 | Question | Answer |
 |---|---|
-| Where does my data go? | Nowhere. The server binds to `127.0.0.1` only. |
+| Where does my data go? | Nowhere. The server binds to `127.0.0.1` only. The single exception: with the opt-in `--live-pricing` flag, Toknado makes one plain GET to LiteLLM's public price file — it carries nothing about you. |
 | What does Toknado store? | Nothing. Every view is recomputed from your logs in memory. |
 | What if I close it without exporting? | Nothing is saved — and nothing is lost. Reopen it and the same history is there, because your CLI logs *are* the data. |
 | Can it modify my logs? | No. Logs are opened read-only. |
@@ -46,7 +48,8 @@ That's it. Your dashboard opens at `http://127.0.0.1:4141`.
 ## How it works
 
 - **Claude Code** writes one JSONL file per session under `~/.claude/projects/`. Each assistant turn records exact API `usage` (input / output / cache read / cache write) per model. Toknado deduplicates entries that appear in multiple files (forked / resumed sessions).
-- **Codex CLI** writes rollout JSONL files under `~/.codex/sessions/`. Toknado attributes usage from `token_count` deltas (fork-safe — inherited cumulative totals are never double counted), reads model + reasoning effort from `turn_context`, and collects the `rate_limits.used_percent` samples for the quota chart.
+- **Codex CLI** writes rollout JSONL files under `~/.codex/sessions/`. Forked/subagent files copy the parent's entire history with rewritten timestamps — Toknado deduplicates on usage snapshots so each API call counts exactly once, reads model + reasoning effort from `turn_context`, and collects the `rate_limits.used_percent` samples for the quota chart.
+- **GitHub Copilot Chat** (VS Code) stores per-session operation logs under the editor's `workspaceStorage/*/chatSessions/`. Toknado replays the op log to recover each request's `promptTokens`/`completionTokens`, model and timestamp (Code, Insiders and VSCodium are auto-detected).
 
 Token counts come straight from the logs — they're exact. Dollar figures in the comparison panel are **estimates** from public list prices.
 
@@ -59,7 +62,10 @@ npx toknado [options]
   --no-open             don't auto-open the browser
   --claude-dir <path>   Claude Code projects dir (default ~/.claude/projects)
   --codex-dir <path>    Codex home dir (default ~/.codex)
+  --copilot-dir <path>  VS Code workspaceStorage dir for Copilot Chat
   --pricing <file>      JSON file with per-Mtok price overrides
+  --live-pricing        fetch current API list prices from LiteLLM's public DB
+                        (the only network request Toknado can ever make; off by default)
 ```
 
 ### Custom pricing

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { parseClaudeLogs } from '../src/parse/claude.js';
 import { parseCodexLogs } from '../src/parse/codex.js';
+import { parseCopilotLogs, defaultCopilotDirs } from '../src/parse/copilot.js';
 import { startServer } from '../src/server.js';
 
 const HOME = os.homedir();
@@ -20,7 +21,9 @@ function parseArgs(argv) {
     else if (a === '--no-open') args.open = false;
     else if (a === '--claude-dir') args.claudeDir = argv[++i];
     else if (a === '--codex-dir') args.codexDir = argv[++i];
+    else if (a === '--copilot-dir') args.copilotDir = argv[++i];
     else if (a === '--pricing') args.pricing = argv[++i];
+    else if (a === '--live-pricing') args.livePricing = true;
     else if (a === '--help' || a === '-h') args.help = true;
   }
   return args;
@@ -41,7 +44,12 @@ const HELP = `
     --no-open             don't auto-open the browser
     --claude-dir <path>   Claude Code projects dir (default ~/.claude/projects)
     --codex-dir <path>    Codex home dir (default ~/.codex)
+    --copilot-dir <path>  VS Code workspaceStorage dir for Copilot Chat
+                          (default: auto-detected Code / Insiders / VSCodium)
     --pricing <file>      JSON file with per-Mtok price overrides
+    --live-pricing        fetch current API list prices from LiteLLM's public
+                          price DB (one GET to raw.githubusercontent.com — the
+                          only network request Toknado can ever make; off by default)
     -h, --help            this message
 `;
 
@@ -65,20 +73,25 @@ async function main() {
     }
   }
 
+  const copilotDirs = args.copilotDir ? [args.copilotDir] : defaultCopilotDirs();
+
   const loadData = async () => {
     const t0 = Date.now();
-    const [claude, codex] = await Promise.all([
+    const [claude, codex, copilot] = await Promise.all([
       parseClaudeLogs(claudeDir),
       parseCodexLogs(codexDirs),
+      parseCopilotLogs(copilotDirs),
     ]);
-    const events = [...claude.events, ...codex.events];
+    const events = [...claude.events, ...codex.events, ...copilot.events];
     return {
       events,
       rateLimits: codex.rateLimits,
       meta: {
         claudeFiles: claude.filesScanned,
         codexFiles: codex.filesScanned,
+        copilotFiles: copilot.filesScanned,
         events: events.length,
+        sources: [...new Set(events.map((e) => e.source))],
         parseMs: Date.now() - t0,
       },
     };
@@ -87,8 +100,8 @@ async function main() {
   console.log('🌪️  toknado is spinning up...');
   const first = await loadData();
   console.log(
-    `   parsed ${first.meta.claudeFiles} Claude + ${first.meta.codexFiles} Codex files ` +
-      `→ ${first.meta.events.toLocaleString()} usage events in ${first.meta.parseMs}ms`,
+    `   parsed ${first.meta.claudeFiles} Claude + ${first.meta.codexFiles} Codex + ` +
+      `${first.meta.copilotFiles} Copilot files → ${first.meta.events.toLocaleString()} usage events in ${first.meta.parseMs}ms`,
   );
 
   // Serve with a warm cache: first request reuses what we just parsed.
@@ -96,6 +109,7 @@ async function main() {
   const server = await startServer({
     port: args.port,
     userPrices,
+    livePricing: !!args.livePricing,
     loadData: async () => {
       if (warm) {
         const w = warm;

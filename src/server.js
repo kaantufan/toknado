@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aggregate, resolveRange, toDayKey } from './aggregate.js';
 import { costComparison } from './pricing.js';
+import { fetchLivePrices } from './pricing-live.js';
 import { toJSON, toCSV, toMarkdown } from './export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,10 +15,16 @@ const WEB_DIR = path.join(__dirname, '..', 'web');
 
 const RELOAD_INTERVAL_MS = 30_000;
 
-export function startServer({ port, loadData, userPrices }) {
+export function startServer({ port, loadData, userPrices, livePricing = false }) {
   let cache = null;
   let cacheAt = 0;
   let loading = null;
+
+  async function prices() {
+    if (!livePricing) return { live: null, fetchedAt: null };
+    const result = await fetchLivePrices(); // module-cached, refreshes every 6h
+    return { live: result?.prices ?? null, fetchedAt: result?.fetchedAt ?? null };
+  }
 
   async function data() {
     const now = Date.now();
@@ -49,20 +56,22 @@ export function startServer({ port, loadData, userPrices }) {
       }
 
       if (url.pathname === '/api/data') {
-        const d = await data();
+        const [d, p] = await Promise.all([data(), prices()]);
         const filter = parseFilter(url);
         const agg = aggregate(d.events, d.rateLimits, filter);
-        const comparison = costComparison(agg.models, agg.totals, userPrices);
+        const comparison = costComparison(agg.models, agg.totals, userPrices, p.live);
+        comparison.pricesFetchedAt = p.fetchedAt;
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ...agg, costComparison: comparison, meta: d.meta }));
         return;
       }
 
       if (url.pathname === '/api/export') {
-        const d = await data();
+        const [d, p] = await Promise.all([data(), prices()]);
         const filter = parseFilter(url);
         const agg = aggregate(d.events, d.rateLimits, filter);
-        const comparison = costComparison(agg.models, agg.totals, userPrices);
+        const comparison = costComparison(agg.models, agg.totals, userPrices, p.live);
+        comparison.pricesFetchedAt = p.fetchedAt;
         const format = url.searchParams.get('format') ?? 'json';
         const stamp = toDayKey(Date.now());
         const send = (body, type, ext) => {

@@ -21,6 +21,7 @@
     --c-cacher: #4a3aa7;     /* violet */
     --c-claude: #eb6834;     /* orange */
     --c-codex: #2a78d6;      /* blue */
+    --c-copilot: #e87ba4;    /* magenta */
     --c-quota: #e34948;      /* red */
     --seq-1:#cde2fb; --seq-2:#9ec5f4; --seq-3:#6da7ec; --seq-4:#3987e5; --seq-5:#256abf; --seq-6:#184f95; --seq-7:#0d366b;
     --slot-1:#2a78d6; --slot-2:#1baf7a; --slot-3:#eda100; --slot-4:#4a3aa7; --slot-5:#e34948; --slot-6:#eb6834; --slot-7:#e87ba4;
@@ -40,6 +41,7 @@
     --c-cacher: #9085e9;
     --c-claude: #d95926;
     --c-codex: #3987e5;
+    --c-copilot: #d55181;
     --c-quota: #e66767;
     --seq-1:#0d366b; --seq-2:#104281; --seq-3:#184f95; --seq-4:#1c5cab; --seq-5:#256abf; --seq-6:#3987e5; --seq-7:#86b6ef;
     --slot-1:#3987e5; --slot-2:#199e70; --slot-3:#c98500; --slot-4:#9085e9; --slot-5:#e66767; --slot-6:#d95926; --slot-7:#d55181;
@@ -152,7 +154,7 @@
 
 <header>
   <h1>🌪️ Toknado</h1>
-  <span class="tag">a tornado of tokens — Claude Code + Codex, all local</span>
+  <span class="tag">a tornado of tokens — Claude Code · Codex · Copilot, all local</span>
   <span class="spacer"></span>
   <span class="privacy">🔒 100% local · nothing leaves your machine</span>
   <button class="btn" id="themeToggle" title="Toggle theme">◐</button>
@@ -173,8 +175,6 @@
   </span>
   <div class="seg" id="sourceSeg">
     <button data-source="" class="on">All</button>
-    <button data-source="claude">Claude</button>
-    <button data-source="codex">Codex</button>
   </div>
   <div class="grow"></div>
   <span style="color:var(--muted);font-size:12px">Export:</span>
@@ -227,6 +227,12 @@
     <h2>Busy hours</h2>
     <div class="hint">tokens by hour of day</div>
     <div id="hoursChart"></div>
+  </div>
+
+  <div class="card span-12">
+    <h2>All models</h2>
+    <div class="hint">every model seen in range — API calls, usage and share</div>
+    <div class="table-scroll" id="allModelsTable"></div>
   </div>
 
   <div class="card span-12">
@@ -309,6 +315,16 @@ function compact(n) {
 }
 const cssVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
 
+// Fixed identity colors per source; unknown sources get palette slots
+// deterministically by name so colors never depend on filter state.
+const KNOWN_SOURCE_VARS = { claude: '--c-claude', codex: '--c-codex', copilot: '--c-copilot' };
+function srcColor(s) {
+  if (KNOWN_SOURCE_VARS[s]) return cssVar(KNOWN_SOURCE_VARS[s]);
+  const extras = (DATA?.meta?.sources ?? []).filter((x) => !KNOWN_SOURCE_VARS[x]).sort();
+  return cssVar(`--slot-${(extras.indexOf(s) % 7) + 1}`);
+}
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function niceTicks(max, count = 4) {
   if (max <= 0) return [0, 1];
   const raw = max / count;
@@ -368,10 +384,27 @@ async function load() {
     const res = await fetch('/api/data?' + params);
     if (!res.ok) throw new Error(`server responded ${res.status}: ${await res.text()}`);
     DATA = await res.json();
+    buildSourceButtons();
     render();
   } catch (err) {
     showLoadError(err);
   }
+}
+
+// Source filter buttons follow whatever tools actually left logs.
+let sourceButtonsBuilt = false;
+function buildSourceButtons() {
+  if (sourceButtonsBuilt) return;
+  const sources = [...(DATA.meta?.sources ?? [])].sort();
+  if (!sources.length) return;
+  const seg = document.getElementById('sourceSeg');
+  for (const s of sources) {
+    const b = document.createElement('button');
+    b.dataset.source = s;
+    b.textContent = cap(s);
+    seg.appendChild(b);
+  }
+  sourceButtonsBuilt = true;
 }
 
 function exportUrl(format) {
@@ -433,6 +466,7 @@ function render() {
   renderQuota();
   renderHeatmap();
   renderHours();
+  renderAllModels();
   renderSessions();
   renderDaysTable();
   renderProjects();
@@ -487,10 +521,13 @@ function renderDaily() {
 
   let series;
   if (state.dailyMode === 'source') {
-    series = [
-      { key: 'claude', label: 'Claude', color: cssVar('--c-claude'), get: (d) => d.sources.claude ?? 0 },
-      { key: 'codex', label: 'Codex', color: cssVar('--c-codex'), get: (d) => d.sources.codex ?? 0 },
-    ];
+    const srcs = [...(DATA.meta?.sources ?? [])].sort();
+    series = srcs.map((s) => ({
+      key: s,
+      label: cap(s),
+      color: srcColor(s),
+      get: (d) => d.sources[s] ?? 0,
+    }));
     document.getElementById('dailyHint').textContent = 'stacked by source';
   } else if (state.dailyMode === 'output') {
     series = [{ key: 'output', label: 'Output', color: cssVar('--c-output'), get: (d) => d.output }];
@@ -777,7 +814,31 @@ function renderHours() {
 
 /* ---- tables ---- */
 const srcPill = (s) =>
-  `<span class="pill"><span class="dot" style="background:var(--c-${s})"></span>${s}</span>`;
+  `<span class="pill"><span class="dot" style="background:${srcColor(s)}"></span>${esc(s)}</span>`;
+
+function renderAllModels() {
+  const el = document.getElementById('allModelsTable');
+  const rows = DATA.models;
+  if (!rows.length) { el.innerHTML = '<div class="empty">—</div>'; return; }
+  const maxShare = Math.max(...rows.map((m) => m.sharePct), 1);
+  el.innerHTML = `<table>
+    <tr><th>Model</th><th>Source</th><th class="num">API calls</th><th class="num">Avg / call</th>
+      <th class="num">Input</th><th class="num">Output</th><th class="num">Cache read</th>
+      <th class="num">Total</th><th class="num">Share</th></tr>
+    ${rows.map((m) => `
+      <tr>
+        <td>${esc(m.model)}</td>
+        <td>${(m.sources ?? []).map(srcPill).join(' ')}</td>
+        <td class="num">${fmt(m.events)}</td>
+        <td class="num">${compact(m.avgPerCall)}</td>
+        <td class="num">${fmt(m.input)}</td>
+        <td class="num">${fmt(m.output)}</td>
+        <td class="num">${fmt(m.cacheRead)}</td>
+        <td class="num">${fmt(m.total)}</td>
+        <td class="num bar-cell">${m.sharePct}%<span class="share-bar" style="width:${(m.sharePct / maxShare) * 90}%"></span></td>
+      </tr>`).join('')}
+  </table>`;
+}
 
 function renderSessions() {
   const el = document.getElementById('sessionsTable');
@@ -839,7 +900,11 @@ function renderProjects() {
 
 function renderCost() {
   const c = DATA.costComparison;
-  document.getElementById('costDisclaimer').textContent = '⚠️ ' + c.disclaimer;
+  const srcTxt =
+    c.pricingSource === 'live'
+      ? ` Prices: live from LiteLLM's public DB, fetched ${c.pricesFetchedAt ? new Date(c.pricesFetchedAt).toLocaleTimeString() : ''} (run with --live-pricing).`
+      : ' Prices: built-in list — run with --live-pricing to fetch current rates.';
+  document.getElementById('costDisclaimer').textContent = '⚠️ ' + c.disclaimer + srcTxt;
   const money = (v) => (v == null ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   document.getElementById('tiersTable').innerHTML = `<table>
     <tr><th>Model tier</th><th class="num">Est. cost</th></tr>

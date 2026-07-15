@@ -57,7 +57,9 @@ export function aggregate(events, rateLimits, filter = {}) {
     upsert(bySource, ev.source, ev);
     const day = toDayKey(ev.ts);
     upsert(byDay, day, ev);
-    upsert(byModel, ev.model, ev);
+    upsert(byModel, ev.model, ev, (b) => {
+      (b.sources ??= new Set()).add(ev.source);
+    });
     if (ev.mode) upsert(byMode, `${ev.source}|${ev.mode}`, ev);
     upsert(bySession, `${ev.source}|${ev.sessionId}`, ev, (b) => {
       b.project = ev.project;
@@ -91,7 +93,13 @@ export function aggregate(events, rateLimits, filter = {}) {
 
   const models = [...byModel.entries()]
     .sort(([, a], [, b]) => b.total - a.total)
-    .map(([model, b]) => ({ model, ...plain(b), sharePct: pct(b.total, grand) }));
+    .map(([model, b]) => ({
+      model,
+      sources: b.sources ? [...b.sources] : [],
+      ...plain(b),
+      sharePct: pct(b.total, grand),
+      avgPerCall: b.events ? Math.round(b.total / b.events) : 0,
+    }));
 
   const modes = [...byMode.entries()]
     .sort(([, a], [, b]) => b.total - a.total)

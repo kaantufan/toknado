@@ -45,15 +45,19 @@ export function findPrice(model, prices) {
   return best;
 }
 
-/** Cost in USD for a token bucket at a given per-Mtok price. */
+/** Cost in USD for a token bucket at a given per-Mtok price.
+ * Uses the model's own cacheRead/cacheWrite rates when known (live pricing
+ * provides them); otherwise falls back to the standard multipliers. */
 export function costOf(bucket, price) {
   if (!price) return null;
   const per = 1_000_000;
+  const cacheReadRate = price.cacheRead ?? price.input * CACHE_READ_MULT;
+  const cacheWriteRate = price.cacheWrite ?? price.input * CACHE_WRITE_MULT;
   return (
     (bucket.input / per) * price.input +
     (bucket.output / per) * price.output +
-    (bucket.cacheRead / per) * price.input * CACHE_READ_MULT +
-    (bucket.cacheWrite / per) * price.input * CACHE_WRITE_MULT
+    (bucket.cacheRead / per) * cacheReadRate +
+    (bucket.cacheWrite / per) * cacheWriteRate
   );
 }
 
@@ -62,9 +66,10 @@ export function costOf(bucket, price) {
  * @param {Array} models per-model buckets from aggregate()
  * @param {object} totals overall bucket
  * @param {object} userPrices optional overrides merged over DEFAULT_PRICES
+ * @param {object|null} livePrices optional live table (sits between defaults and user overrides)
  */
-export function costComparison(models, totals, userPrices = {}) {
-  const prices = { ...DEFAULT_PRICES, ...userPrices };
+export function costComparison(models, totals, userPrices = {}, livePrices = null) {
+  const prices = { ...DEFAULT_PRICES, ...(livePrices ?? {}), ...userPrices };
 
   // 1) actual mix: price each model's own usage where a rate is known
   const perModel = models.map((m) => {
@@ -92,6 +97,7 @@ export function costComparison(models, totals, userPrices = {}) {
     knownCost: round2(knownCost),
     unpricedTokens,
     tiers,
+    pricingSource: livePrices ? 'live' : 'builtin',
   };
 }
 
