@@ -1,0 +1,31 @@
+{
+  "name": "toknado",
+  "version": "0.1.0",
+  "description": "🌪️ A tornado of tokens — local, private usage dashboard for Claude Code & Codex CLI logs",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "toknado": "bin/toknado.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "token-usage",
+    "dashboard",
+    "cli",
+    "local-first"
+  ],
+  "scripts": {
+    "start": "node bin/toknado.js"
+  }
+}

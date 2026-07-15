@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toknado 🌪️</title>
+<style>
+  :root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    /* fixed series identities (validated palette, light) */
+    --c-input: #2a78d6;      /* blue */
+    --c-output: #1baf7a;     /* aqua */
+    --c-cachew: #eda100;     /* yellow */
+    --c-cacher: #4a3aa7;     /* violet */
+    --c-claude: #eb6834;     /* orange */
+    --c-codex: #2a78d6;      /* blue */
+    --c-quota: #e34948;      /* red */
+    --seq-1:#cde2fb; --seq-2:#9ec5f4; --seq-3:#6da7ec; --seq-4:#3987e5; --seq-5:#256abf; --seq-6:#184f95; --seq-7:#0d366b;
+    --slot-1:#2a78d6; --slot-2:#1baf7a; --slot-3:#eda100; --slot-4:#4a3aa7; --slot-5:#e34948; --slot-6:#eb6834; --slot-7:#e87ba4;
+  }
+  html[data-theme="dark"] {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --c-input: #3987e5;
+    --c-output: #199e70;
+    --c-cachew: #c98500;
+    --c-cacher: #9085e9;
+    --c-claude: #d95926;
+    --c-codex: #3987e5;
+    --c-quota: #e66767;
+    --seq-1:#0d366b; --seq-2:#104281; --seq-3:#184f95; --seq-4:#1c5cab; --seq-5:#256abf; --seq-6:#3987e5; --seq-7:#86b6ef;
+    --slot-1:#3987e5; --slot-2:#199e70; --slot-3:#c98500; --slot-4:#9085e9; --slot-5:#e66767; --slot-6:#d95926; --slot-7:#d55181;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 20px clamp(12px, 3vw, 40px) 60px;
+  }
+  a { color: inherit; }
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  header h1 { font-size: 26px; font-weight: 700; }
+  header .tag { color: var(--ink-2); }
+  header .spacer { flex: 1; }
+  .privacy { color: var(--muted); font-size: 12px; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin: 16px 0 20px; padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    background: transparent; color: var(--ink-2); border: 0; padding: 6px 12px;
+    font: inherit; cursor: pointer;
+  }
+  .seg button:hover { color: var(--ink); }
+  .seg button.on { background: var(--ink); color: var(--page); font-weight: 600; }
+  .controls .grow { flex: 1; }
+  .controls input[type="date"] {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 6px; font: inherit;
+  }
+  .btn {
+    background: transparent; border: 1px solid var(--border); color: var(--ink-2);
+    border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer;
+  }
+  .btn:hover { color: var(--ink); border-color: var(--axis); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .tile .label { color: var(--muted); font-size: 12px; }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile .sub { color: var(--ink-2); font-size: 12px; margin-top: 2px; }
+
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; min-width: 0;
+  }
+  .card h2 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .card .hint { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .span-12 { grid-column: span 12; }
+  .span-8 { grid-column: span 8; }
+  .span-7 { grid-column: span 7; }
+  .span-6 { grid-column: span 6; }
+  .span-5 { grid-column: span 5; }
+  .span-4 { grid-column: span 4; }
+  @media (max-width: 980px) { .span-8,.span-7,.span-6,.span-5,.span-4 { grid-column: span 12; } }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; color: var(--ink-2); font-size: 12px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--muted); }
+  svg text.val { font-variant-numeric: tabular-nums; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .axisline { stroke: var(--axis); stroke-width: 1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: 0; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-2); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; border: 1px solid var(--border); color: var(--ink-2); }
+  .pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+  .bar-cell { position: relative; }
+  .share-bar { position: absolute; left: 0; bottom: 2px; height: 3px; border-radius: 2px; background: var(--c-input); opacity: .5; }
+
+  .table-scroll { overflow-x: auto; }
+  .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--ink); color: var(--page);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; max-width: 280px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  }
+  #tooltip .t-title { font-weight: 600; margin-bottom: 3px; }
+  #tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; }
+  #tooltip .t-row .v { font-variant-numeric: tabular-nums; }
+
+  .disclaimer {
+    border-left: 3px solid var(--c-cachew); padding: 6px 10px; margin-bottom: 10px;
+    color: var(--ink-2); font-size: 12px; background: color-mix(in srgb, var(--c-cachew) 6%, transparent);
+    border-radius: 0 6px 6px 0;
+  }
+  footer { margin-top: 30px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌪️ Toknado</h1>
+  <span class="tag">a tornado of tokens — Claude Code + Codex, all local</span>
+  <span class="spacer"></span>
+  <span class="privacy">🔒 100% local · nothing leaves your machine</span>
+  <button class="btn" id="themeToggle" title="Toggle theme">◐</button>
+</header>
+
+<div class="controls">
+  <div class="seg" id="rangeSeg">
+    <button data-range="today">Today</button>
+    <button data-range="7d">7D</button>
+    <button data-range="14d">14D</button>
+    <button data-range="30d" class="on">30D</button>
+    <button data-range="all">All</button>
+    <button data-range="custom">Custom</button>
+  </div>
+  <span id="customRange" style="display:none">
+    <input type="date" id="dateFrom"> → <input type="date" id="dateTo">
+    <button class="btn" id="applyRange">Apply</button>
+  </span>
+  <div class="seg" id="sourceSeg">
+    <button data-source="" class="on">All</button>
+    <button data-source="claude">Claude</button>
+    <button data-source="codex">Codex</button>
+  </div>
+  <div class="grow"></div>
+  <span style="color:var(--muted);font-size:12px">Export:</span>
+  <button class="btn" data-export="json">JSON</button>
+  <button class="btn" data-export="csv">CSV</button>
+  <button class="btn" data-export="md">Markdown</button>
+</div>
+
+<div class="tiles" id="tiles"></div>
+
+<div class="grid">
+  <div class="card span-8">
+    <h2>Daily tokens</h2>
+    <div class="hint" id="dailyHint">stacked by token type</div>
+    <div class="seg" style="margin-bottom:10px" id="dailyModeSeg">
+      <button data-mode="type" class="on">By type</button>
+      <button data-mode="source">By source</button>
+      <button data-mode="output">Output only</button>
+    </div>
+    <div id="dailyChart"></div>
+    <div class="legend" id="dailyLegend"></div>
+  </div>
+
+  <div class="card span-4">
+    <h2>Model share</h2>
+    <div class="hint">share of total tokens in range</div>
+    <div id="modelDonut"></div>
+    <div class="legend" id="modelLegend"></div>
+  </div>
+
+  <div class="card span-6">
+    <h2>Modes used</h2>
+    <div class="hint">Codex reasoning effort · Claude response speed</div>
+    <div id="modesChart"></div>
+  </div>
+
+  <div class="card span-6">
+    <h2>Codex quota usage</h2>
+    <div class="hint" id="quotaHint">real rate-limit % from Codex logs (weekly window)</div>
+    <div id="quotaChart"></div>
+  </div>
+
+  <div class="card span-7">
+    <h2>Activity heatmap</h2>
+    <div class="hint">daily total tokens, darker = more</div>
+    <div id="heatmap"></div>
+  </div>
+
+  <div class="card span-5">
+    <h2>Busy hours</h2>
+    <div class="hint">tokens by hour of day</div>
+    <div id="hoursChart"></div>
+  </div>
+
+  <div class="card span-12">
+    <h2>Top sessions</h2>
+    <div class="hint">heaviest sessions in range, with share of total usage</div>
+    <div class="table-scroll" id="sessionsTable"></div>
+  </div>
+
+  <div class="card span-6">
+    <h2>Daily breakdown</h2>
+    <div class="table-scroll" id="daysTable"></div>
+  </div>
+
+  <div class="card span-6">
+    <h2>Projects</h2>
+    <div class="table-scroll" id="projectsTable"></div>
+  </div>
+
+  <div class="card span-12">
+    <h2>What-if API cost comparison</h2>
+    <div class="disclaimer" id="costDisclaimer"></div>
+    <div class="grid" style="gap:14px">
+      <div class="span-6">
+        <h2 style="font-size:13px;color:var(--ink-2)">If the whole mix ran on…</h2>
+        <div class="table-scroll" id="tiersTable"></div>
+      </div>
+      <div class="span-6">
+        <h2 style="font-size:13px;color:var(--ink-2)">Actual mix at list prices</h2>
+        <div class="table-scroll" id="mixTable"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  🌪️ <strong>Toknado</strong> — open source, MIT. Reads <span class="mono">~/.claude</span> + <span class="mono">~/.codex</span> logs read-only.
+  Nothing is uploaded, tracked, or persisted — close the tab and only your logs remain.
+</footer>
+
+<div id="tooltip"></div>
+
+<script>
+'use strict';
+
+/* ---------- state ---------- */
+const state = { range: '30d', source: '', since: null, until: null, dailyMode: 'type' };
+let DATA = null;
+
+/* ---------- theme ---------- */
+const root = document.documentElement;
+function applyTheme(t) { root.dataset.theme = t; localStorage.setItem('toknado-theme', t); }
+applyTheme(localStorage.getItem('toknado-theme') ??
+  (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+document.getElementById('themeToggle').onclick = () => {
+  applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+  if (DATA) render(); // charts read palette values at render time
+};
+
+/* ---------- helpers ---------- */
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (n) => (n ?? 0).toLocaleString('en-US');
+function compact(n) {
+  n = n ?? 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 1 : 2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + 'K';
+  return String(n);
+}
+const cssVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+
+function niceTicks(max, count = 4) {
+  if (max <= 0) return [0, 1];
+  const raw = max / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
+  const ticks = [];
+  for (let v = 0; v <= max + step * 0.001; v += step) ticks.push(v);
+  if (ticks[ticks.length - 1] < max) ticks.push(ticks.length * step);
+  return ticks;
+}
+
+/* tooltip */
+const tip = document.getElementById('tooltip');
+function showTip(html, x, y) {
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  const r = tip.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + r.width > innerWidth - 8) left = x - r.width - 14;
+  if (top + r.height > innerHeight - 8) top = y - r.height - 14;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+function hideTip() { tip.style.display = 'none'; }
+function bindTips(container) {
+  container.querySelectorAll('[data-tip]').forEach((el) => {
+    el.addEventListener('mousemove', (e) => showTip(el.dataset.tip, e.clientX, e.clientY));
+    el.addEventListener('mouseleave', hideTip);
+  });
+}
+const tipRows = (title, rows) =>
+  `<div class="t-title">${esc(title)}</div>` +
+  rows.map(([k, v]) => `<div class="t-row"><span>${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join('');
+
+/* rounded-top rect path (4px data end, square baseline) */
+function topRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h);
+  if (h <= 0.5) return '';
+  return `M${x},${y + h} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${w - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z`;
+}
+
+/* ---------- fetch + render ---------- */
+async function load() {
+  const params = new URLSearchParams();
+  if (state.range === 'custom' && state.since) {
+    params.set('since', state.since);
+    params.set('until', state.until);
+  } else params.set('range', state.range);
+  if (state.source) params.set('source', state.source);
+
+  const res = await fetch('/api/data?' + params);
+  DATA = await res.json();
+  render();
+}
+
+function exportUrl(format) {
+  const params = new URLSearchParams();
+  if (state.range === 'custom' && state.since) {
+    params.set('since', state.since);
+    params.set('until', state.until);
+  } else params.set('range', state.range);
+  if (state.source) params.set('source', state.source);
+  params.set('format', format);
+  return '/api/export?' + params;
+}
+
+/* ---------- controls ---------- */
+function segWire(id, attr, cb) {
+  const seg = document.getElementById(id);
+  seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === btn));
+    cb(btn.dataset[attr]);
+  });
+}
+segWire('rangeSeg', 'range', (r) => {
+  state.range = r;
+  document.getElementById('customRange').style.display = r === 'custom' ? '' : 'none';
+  if (r !== 'custom') { state.since = state.until = null; load(); }
+});
+segWire('sourceSeg', 'source', (s) => { state.source = s; load(); });
+segWire('dailyModeSeg', 'mode', (m) => { state.dailyMode = m; renderDaily(); });
+document.getElementById('applyRange').onclick = () => {
+  const f = document.getElementById('dateFrom').value;
+  const t = document.getElementById('dateTo').value;
+  if (!f || !t) return;
+  state.since = new Date(f + 'T00:00:00').getTime();
+  state.until = new Date(t + 'T23:59:59.999').getTime();
+  load();
+};
+document.querySelectorAll('[data-export]').forEach((b) => {
+  b.onclick = () => { location.href = exportUrl(b.dataset.export); };
+});
+
+/* ---------- render ---------- */
+function render() {
+  renderTiles();
+  renderDaily();
+  renderDonut();
+  renderModes();
+  renderQuota();
+  renderHeatmap();
+  renderHours();
+  renderSessions();
+  renderDaysTable();
+  renderProjects();
+  renderCost();
+}
+
+function renderTiles() {
+  const t = DATA.totals;
+  const r = DATA.range;
+  const rangeTxt = r.since
+    ? `${new Date(r.since).toISOString().slice(0, 10)} → ${new Date(r.until).toISOString().slice(0, 10)}`
+    : 'no data in range';
+  const tiles = [
+    ['Total tokens', compact(t.total), rangeTxt],
+    ['Output', compact(t.output), pctTxt(t.output, t.total) + ' of total'],
+    ['Fresh input', compact(t.input), pctTxt(t.input, t.total) + ' of total'],
+    ['Cache read', compact(t.cacheRead), `hit rate ${t.cacheHitPct}%`],
+    ['Sessions', fmt(t.sessions), `${r.activeDays} active days`],
+    ['Avg / active day', compact(t.avgPerActiveDay), `${fmt(t.events)} API calls`],
+  ];
+  document.getElementById('tiles').innerHTML = tiles
+    .map(([l, v, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${esc(s)}</div></div>`)
+    .join('');
+}
+const pctTxt = (p, w) => (w ? ((p / w) * 100).toFixed(1) : '0') + '%';
+
+/* ---- daily stacked bars ---- */
+function renderDaily() {
+  const el = document.getElementById('dailyChart');
+  const legendEl = document.getElementById('dailyLegend');
+  const days = DATA.days;
+  if (!days.length) { el.innerHTML = '<div class="empty">No usage in this range 🌵</div>'; legendEl.innerHTML = ''; return; }
+
+  let series;
+  if (state.dailyMode === 'source') {
+    series = [
+      { key: 'claude', label: 'Claude', color: cssVar('--c-claude'), get: (d) => d.sources.claude ?? 0 },
+      { key: 'codex', label: 'Codex', color: cssVar('--c-codex'), get: (d) => d.sources.codex ?? 0 },
+    ];
+    document.getElementById('dailyHint').textContent = 'stacked by source';
+  } else if (state.dailyMode === 'output') {
+    series = [{ key: 'output', label: 'Output', color: cssVar('--c-output'), get: (d) => d.output }];
+    document.getElementById('dailyHint').textContent = 'output tokens only — what the models actually wrote';
+  } else {
+    series = [
+      { key: 'cacheRead', label: 'Cache read', color: cssVar('--c-cacher'), get: (d) => d.cacheRead },
+      { key: 'cacheWrite', label: 'Cache write', color: cssVar('--c-cachew'), get: (d) => d.cacheWrite },
+      { key: 'input', label: 'Fresh input', color: cssVar('--c-input'), get: (d) => d.input },
+      { key: 'output', label: 'Output', color: cssVar('--c-output'), get: (d) => d.output },
+    ];
+    document.getElementById('dailyHint').textContent = 'stacked by token type';
+  }
+
+  const W = 860, H = 260, padL = 54, padR = 8, padT = 10, padB = 26;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const max = Math.max(...days.map((d) => series.reduce((s, sr) => s + sr.get(d), 0)), 1);
+  const ticks = niceTicks(max);
+  const yMax = ticks[ticks.length - 1];
+  const y = (v) => padT + innerH - (v / yMax) * innerH;
+
+  const slot = innerW / days.length;
+  const barW = Math.min(24, Math.max(2, slot - 4));
+  const gap = 2; // surface gap between stacked segments
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily token usage">`;
+  for (const tv of ticks) {
+    svg += `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${y(tv)}" y2="${y(tv)}"></line>`;
+    svg += `<text class="val" x="${padL - 6}" y="${y(tv) + 3}" text-anchor="end">${compact(tv)}</text>`;
+  }
+  svg += `<line class="axisline" x1="${padL}" x2="${W - padR}" y1="${padT + innerH}" y2="${padT + innerH}"></line>`;
+
+  const labelEvery = Math.ceil(days.length / 12);
+  days.forEach((d, i) => {
+    const x = padL + i * slot + (slot - barW) / 2;
+    // top of stack rounded, others square, 2px gaps between
+    const active = series.map((sr) => ({ ...sr, v: sr.get(d) })).filter((sr) => sr.v > 0);
+    let acc = 0;
+    const segs = active.map((sr) => {
+      const y0 = y(acc + sr.v), y1 = y(acc);
+      acc += sr.v;
+      return { ...sr, top: y0, bottom: y1 };
+    });
+    segs.forEach((sg, si) => {
+      const isTop = si === segs.length - 1;
+      const h = Math.max(0, sg.bottom - sg.top - (si > 0 ? gap : 0));
+      const yTop = sg.top;
+      if (h <= 0) return;
+      svg += isTop
+        ? `<path d="${topRect(x, yTop, barW, h, 4)}" fill="${sg.color}"></path>`
+        : `<rect x="${x}" y="${yTop}" width="${barW}" height="${h}" fill="${sg.color}"></rect>`;
+    });
+    const total = active.reduce((s, sr) => s + sr.v, 0);
+    const tipHtml = tipRows(d.day, [
+      ...series.map((sr) => [sr.label, fmt(sr.get(d))]),
+      ['Total', fmt(total)],
+      ['Share of range', d.sharePct + '%'],
+    ]);
+    svg += `<rect x="${padL + i * slot}" y="${padT}" width="${slot}" height="${innerH}" fill="transparent" data-tip="${esc(tipHtml)}"></rect>`;
+    if (i % labelEvery === 0) {
+      svg += `<text x="${padL + i * slot + slot / 2}" y="${H - 8}" text-anchor="middle">${d.day.slice(5)}</text>`;
+    }
+  });
+  svg += '</svg>';
+  el.innerHTML = svg;
+  legendEl.innerHTML = series
+    .map((s) => `<span class="key"><span class="sw" style="background:${s.color}"></span>${s.label}</span>`)
+    .join('');
+  bindTips(el);
+}
+
+/* ---- model donut ---- */
+function renderDonut() {
+  const el = document.getElementById('modelDonut');
+  const legendEl = document.getElementById('modelLegend');
+  const models = DATA.models;
+  if (!models.length) { el.innerHTML = '<div class="empty">—</div>'; legendEl.innerHTML = ''; return; }
+
+  const MAXSLOTS = 6;
+  const top = models.slice(0, MAXSLOTS);
+  const rest = models.slice(MAXSLOTS);
+  const items = [...top.map((m, i) => ({ ...m, color: cssVar(`--slot-${i + 1}`) }))];
+  if (rest.length) {
+    items.push({
+      model: `Other (${rest.length})`,
+      total: rest.reduce((s, m) => s + m.total, 0),
+      sharePct: Math.round(rest.reduce((s, m) => s + m.sharePct, 0) * 100) / 100,
+      output: rest.reduce((s, m) => s + m.output, 0),
+      color: cssVar('--muted'),
+    });
+  }
+
+  const size = 220, cx = size / 2, cy = size / 2, r = 78, thick = 30;
+  const totalAll = items.reduce((s, m) => s + m.total, 0) || 1;
+  let angle = -Math.PI / 2;
+  let svg = `<svg viewBox="0 0 ${size} ${size}" style="max-width:240px;margin:0 auto">`;
+  for (const it of items) {
+    const frac = it.total / totalAll;
+    const a2 = angle + frac * Math.PI * 2;
+    svg += `<path d="${arcPath(cx, cy, r, angle, a2)}" fill="none" stroke="${it.color}"
+      stroke-width="${thick}" data-tip="${esc(tipRows(it.model, [['Tokens', fmt(it.total)], ['Share', it.sharePct + '%'], ['Output', fmt(it.output)]]))}"></path>`;
+    angle = a2;
+  }
+  // 2px surface gaps between arcs
+  angle = -Math.PI / 2;
+  for (const it of items) {
+    const a2 = angle + (it.total / totalAll) * Math.PI * 2;
+    svg += `<line x1="${cx + Math.cos(angle) * (r - thick / 2 - 1)}" y1="${cy + Math.sin(angle) * (r - thick / 2 - 1)}"
+      x2="${cx + Math.cos(angle) * (r + thick / 2 + 1)}" y2="${cy + Math.sin(angle) * (r + thick / 2 + 1)}"
+      stroke="var(--surface)" stroke-width="2"></line>`;
+    angle = a2;
+  }
+  svg += `<text x="${cx}" y="${cy - 4}" text-anchor="middle" style="font-size:20px;font-weight:600;fill:var(--ink)">${compact(totalAll)}</text>`;
+  svg += `<text x="${cx}" y="${cy + 14}" text-anchor="middle">tokens</text>`;
+  svg += '</svg>';
+  el.innerHTML = svg;
+  legendEl.innerHTML = items
+    .map((it) => `<span class="key"><span class="sw" style="background:${it.color}"></span>${esc(it.model)} <strong style="color:var(--ink)">${it.sharePct}%</strong></span>`)
+    .join('');
+  bindTips(el);
+}
+function arcPath(cx, cy, r, a1, a2) {
+  // clamp a full circle slightly so the arc renders
+  if (a2 - a1 >= Math.PI * 2 - 0.0001) a2 = a1 + Math.PI * 2 - 0.0001;
+  const large = a2 - a1 > Math.PI ? 1 : 0;
+  return `M${cx + Math.cos(a1) * r},${cy + Math.sin(a1) * r} A${r},${r} 0 ${large} 1 ${cx + Math.cos(a2) * r},${cy + Math.sin(a2) * r}`;
+}
+
+/* ---- modes (horizontal bars) ---- */
+function renderModes() {
+  const el = document.getElementById('modesChart');
+  const modes = DATA.modes;
+  if (!modes.length) { el.innerHTML = '<div class="empty">No mode data in this range</div>'; return; }
+
+  const ORDER = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'standard', 'fast'];
+  const rows = [...modes].sort((a, b) => {
+    if (a.source !== b.source) return a.source < b.source ? -1 : 1;
+    return ORDER.indexOf(a.mode.split(':')[1]) - ORDER.indexOf(b.mode.split(':')[1]);
+  });
+  const max = Math.max(...rows.map((m) => m.total), 1);
+  const W = 520, rowH = 26, padL = 150, padR = 60;
+  const H = rows.length * rowH + 8;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Modes used">`;
+  rows.forEach((m, i) => {
+    const yy = 4 + i * rowH;
+    const w = Math.max(2, ((W - padL - padR) * m.total) / max);
+    const color = m.source === 'claude' ? cssVar('--c-claude') : cssVar('--c-codex');
+    const label = m.mode.replace('effort:', '').replace('speed:', '');
+    svg += `<text x="${padL - 8}" y="${yy + 15}" text-anchor="end" style="fill:var(--ink-2)">${esc(m.source)} · ${esc(label)}</text>`;
+    svg += `<path d="M${padL},${yy + 3} h${Math.max(0, w - 4)} a4,4 0 0 1 4,4 v${rowH - 14} a4,4 0 0 1 -4,4 h${-Math.max(0, w - 4)} z" fill="${color}"
+      data-tip="${esc(tipRows(`${m.source} · ${label}`, [['Tokens', fmt(m.total)], ['Share', m.sharePct + '%'], ['Calls', fmt(m.events)]]))}"></path>`;
+    svg += `<text class="val" x="${padL + w + 6}" y="${yy + 15}">${compact(m.total)}</text>`;
+  });
+  svg += '</svg>';
+  el.innerHTML = svg;
+  bindTips(el);
+}
+
+/* ---- codex quota line ---- */
+function renderQuota() {
+  const el = document.getElementById('quotaChart');
+  const q = DATA.quota;
+  if (!q.length) {
+    el.innerHTML = '<div class="empty">No Codex rate-limit samples in this range</div>';
+    return;
+  }
+  const plan = q[q.length - 1].plan;
+  const win = q[q.length - 1].windowMinutes;
+  document.getElementById('quotaHint').textContent =
+    `real rate-limit % from Codex logs` +
+    (win ? ` · ${Math.round(win / 1440)}-day window` : '') + (plan ? ` · plan: ${plan}` : '');
+
+  const W = 520, H = 200, padL = 38, padR = 16, padT = 10, padB = 24;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const t0 = q[0].ts, t1 = q[q.length - 1].ts || t0 + 1;
+  const x = (ts) => padL + ((ts - t0) / Math.max(1, t1 - t0)) * innerW;
+  const y = (p) => padT + innerH - (p / 100) * innerH;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Codex quota used percent">`;
+  for (const tv of [0, 25, 50, 75, 100]) {
+    svg += `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${y(tv)}" y2="${y(tv)}"></line>`;
+    svg += `<text class="val" x="${padL - 6}" y="${y(tv) + 3}" text-anchor="end">${tv}%</text>`;
+  }
+  const pts = q.map((s) => `${x(s.ts).toFixed(1)},${y(s.usedPercent).toFixed(1)}`);
+  svg += `<path d="M${pts.join(' L')} L${x(t1)},${y(0)} L${x(t0)},${y(0)} Z" fill="${cssVar('--c-quota')}" opacity="0.1"></path>`;
+  svg += `<path d="M${pts.join(' L')}" fill="none" stroke="${cssVar('--c-quota')}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>`;
+  const last = q[q.length - 1];
+  svg += `<circle cx="${x(last.ts)}" cy="${y(last.usedPercent)}" r="4" fill="${cssVar('--c-quota')}" stroke="var(--surface)" stroke-width="2"></circle>`;
+  svg += `<text class="val" x="${Math.min(x(last.ts), W - padR - 4)}" y="${y(last.usedPercent) - 8}" text-anchor="end" style="fill:var(--ink);font-weight:600">${last.usedPercent}%</text>`;
+  // date labels
+  svg += `<text x="${padL}" y="${H - 6}">${new Date(t0).toISOString().slice(5, 10)}</text>`;
+  svg += `<text x="${W - padR}" y="${H - 6}" text-anchor="end">${new Date(t1).toISOString().slice(5, 10)}</text>`;
+  // hover: nearest sample
+  svg += `<rect x="${padL}" y="${padT}" width="${innerW}" height="${innerH}" fill="transparent" id="quotaHover"></rect>`;
+  svg += '</svg>';
+  el.innerHTML = svg;
+  const hover = el.querySelector('#quotaHover');
+  hover.addEventListener('mousemove', (e) => {
+    const rect = hover.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const ts = t0 + frac * (t1 - t0);
+    let best = q[0];
+    for (const s of q) if (Math.abs(s.ts - ts) < Math.abs(best.ts - ts)) best = s;
+    showTip(tipRows(new Date(best.ts).toLocaleString(), [['Quota used', best.usedPercent + '%']]), e.clientX, e.clientY);
+  });
+  hover.addEventListener('mouseleave', hideTip);
+}
+
+/* ---- heatmap ---- */
+function renderHeatmap() {
+  const el = document.getElementById('heatmap');
+  const days = DATA.days;
+  if (!days.length) { el.innerHTML = '<div class="empty">—</div>'; return; }
+  const byDay = new Map(days.map((d) => [d.day, d]));
+  const first = new Date(days[0].day + 'T12:00:00');
+  const last = new Date(days[days.length - 1].day + 'T12:00:00');
+  // start on the Monday on/before first
+  const start = new Date(first);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const weeks = [];
+  for (let d = new Date(start); d <= last; ) {
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const key = d.toISOString().slice(0, 10);
+      week.push({ key, data: byDay.get(key) ?? null, inRange: d >= first && d <= last });
+      d = new Date(d.getTime() + 86400000);
+    }
+    weeks.push(week);
+  }
+  const max = Math.max(...days.map((d) => d.total), 1);
+  const ramp = [1, 2, 3, 4, 5, 6, 7].map((i) => cssVar(`--seq-${i}`));
+  const cell = 15, gap = 3;
+  const W = weeks.length * (cell + gap) + 30, H = 7 * (cell + gap) + 18;
+  const dow = ['M', '', 'W', '', 'F', '', 'S'];
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="max-width:${W * 1.4}px" role="img" aria-label="Daily activity heatmap">`;
+  dow.forEach((l, i) => { if (l) svg += `<text x="8" y="${i * (cell + gap) + 11}" text-anchor="middle">${l}</text>`; });
+  weeks.forEach((week, wi) => {
+    week.forEach((day, di) => {
+      if (!day.inRange) return;
+      const v = day.data?.total ?? 0;
+      const level = v === 0 ? -1 : Math.min(6, Math.floor((v / max) * 7));
+      const fill = level < 0 ? 'var(--grid)' : ramp[level];
+      const tipH = tipRows(day.key, [['Total', fmt(v)], ['Share', (day.data?.sharePct ?? 0) + '%']]);
+      svg += `<rect x="${20 + wi * (cell + gap)}" y="${di * (cell + gap)}" width="${cell}" height="${cell}" rx="3" fill="${fill}" data-tip="${esc(tipH)}"></rect>`;
+    });
+  });
+  svg += '</svg>';
+  el.innerHTML = svg;
+  bindTips(el);
+}
+
+/* ---- hours ---- */
+function renderHours() {
+  const el = document.getElementById('hoursChart');
+  const hours = DATA.hours;
+  const max = Math.max(...hours.map((h) => h.total), 1);
+  const W = 420, H = 170, padL = 40, padB = 20, padT = 8;
+  const innerW = W - padL - 8, innerH = H - padT - padB;
+  const slot = innerW / 24;
+  const barW = Math.min(14, slot - 3);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens by hour of day">`;
+  const ticks = niceTicks(max, 3);
+  const yMax = ticks[ticks.length - 1];
+  const y = (v) => padT + innerH - (v / yMax) * innerH;
+  for (const tv of ticks) {
+    svg += `<line class="gridline" x1="${padL}" x2="${W - 8}" y1="${y(tv)}" y2="${y(tv)}"></line>`;
+    svg += `<text class="val" x="${padL - 5}" y="${y(tv) + 3}" text-anchor="end">${compact(tv)}</text>`;
+  }
+  hours.forEach((h, i) => {
+    const x = padL + i * slot + (slot - barW) / 2;
+    const hh = padT + innerH - y(h.total);
+    svg += `<path d="${topRect(x, y(h.total), barW, hh, 3)}" fill="${cssVar('--c-input')}"
+      data-tip="${esc(tipRows(`${String(h.hour).padStart(2, '0')}:00–${String(h.hour).padStart(2, '0')}:59`, [['Tokens', fmt(h.total)], ['Calls', fmt(h.events)]]))}"></path>`;
+    if (i % 4 === 0) svg += `<text x="${padL + i * slot + slot / 2}" y="${H - 5}" text-anchor="middle">${h.hour}</text>`;
+  });
+  svg += '</svg>';
+  el.innerHTML = svg;
+  bindTips(el);
+}
+
+/* ---- tables ---- */
+const srcPill = (s) =>
+  `<span class="pill"><span class="dot" style="background:var(--c-${s})"></span>${s}</span>`;
+
+function renderSessions() {
+  const el = document.getElementById('sessionsTable');
+  const rows = DATA.sessions;
+  if (!rows.length) { el.innerHTML = '<div class="empty">No sessions in range</div>'; return; }
+  const maxShare = Math.max(...rows.map((s) => s.sharePct), 1);
+  el.innerHTML = `<table>
+    <tr><th>Source</th><th>Project</th><th>Session</th><th>Models</th><th>When</th>
+      <th class="num">Total</th><th class="num">Output</th><th class="num">Share</th></tr>
+    ${rows.slice(0, 25).map((s) => `
+      <tr>
+        <td>${srcPill(s.source)}</td>
+        <td>${esc(s.project)}</td>
+        <td class="mono" title="${esc(s.sessionId)}">${esc(s.sessionId.slice(0, 8))}…</td>
+        <td class="mono">${esc(s.models.map(shortModel).join(', '))}</td>
+        <td class="mono">${s.firstTs ? new Date(s.firstTs).toISOString().slice(0, 10) : '—'}</td>
+        <td class="num">${fmt(s.total)}</td>
+        <td class="num">${fmt(s.output)}</td>
+        <td class="num bar-cell">${s.sharePct}%<span class="share-bar" style="width:${(s.sharePct / maxShare) * 90}%"></span></td>
+      </tr>`).join('')}
+  </table>`;
+}
+const shortModel = (m) => m.replace('claude-', '').replace('accounts/fireworks/routers/', 'fw:');
+
+function renderDaysTable() {
+  const el = document.getElementById('daysTable');
+  const rows = [...DATA.days].reverse();
+  if (!rows.length) { el.innerHTML = '<div class="empty">—</div>'; return; }
+  const maxShare = Math.max(...rows.map((d) => d.sharePct), 1);
+  el.innerHTML = `<table>
+    <tr><th>Day</th><th class="num">Total</th><th class="num">Output</th><th class="num">Cache read</th><th class="num">Share</th></tr>
+    ${rows.map((d) => `
+      <tr>
+        <td class="mono">${d.day}</td>
+        <td class="num">${fmt(d.total)}</td>
+        <td class="num">${fmt(d.output)}</td>
+        <td class="num">${fmt(d.cacheRead)}</td>
+        <td class="num bar-cell">${d.sharePct}%<span class="share-bar" style="width:${(d.sharePct / maxShare) * 90}%"></span></td>
+      </tr>`).join('')}
+  </table>`;
+}
+
+function renderProjects() {
+  const el = document.getElementById('projectsTable');
+  const rows = DATA.projects;
+  if (!rows.length) { el.innerHTML = '<div class="empty">—</div>'; return; }
+  el.innerHTML = `<table>
+    <tr><th>Source</th><th>Project</th><th class="num">Total</th><th class="num">Output</th><th class="num">Share</th></tr>
+    ${rows.slice(0, 15).map((p) => `
+      <tr>
+        <td>${srcPill(p.source)}</td>
+        <td>${esc(p.project)}</td>
+        <td class="num">${fmt(p.total)}</td>
+        <td class="num">${fmt(p.output)}</td>
+        <td class="num">${p.sharePct}%</td>
+      </tr>`).join('')}
+  </table>`;
+}
+
+function renderCost() {
+  const c = DATA.costComparison;
+  document.getElementById('costDisclaimer').textContent = '⚠️ ' + c.disclaimer;
+  const money = (v) => (v == null ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  document.getElementById('tiersTable').innerHTML = `<table>
+    <tr><th>Model tier</th><th class="num">Est. cost</th></tr>
+    ${c.tiers.map((t) => `<tr><td>${esc(t.label)}</td><td class="num">${money(t.cost)}</td></tr>`).join('')}
+  </table>`;
+  document.getElementById('mixTable').innerHTML = `<table>
+    <tr><th>Model</th><th class="num">Tokens</th><th class="num">Est. cost</th></tr>
+    ${c.perModel.slice(0, 10).map((m) => `
+      <tr><td>${esc(m.model)}</td><td class="num">${fmt(m.total)}</td>
+      <td class="num">${m.priced ? money(m.cost) : '<span title="no list price known — add one via --pricing">n/a</span>'}</td></tr>`).join('')}
+    <tr><td><strong>Total (priced models)</strong></td><td class="num">${c.unpricedTokens ? compact(c.unpricedTokens) + ' unpriced' : ''}</td>
+      <td class="num"><strong>${money(c.knownCost)}</strong></td></tr>
+  </table>`;
+}
+
+/* ---------- boot ---------- */
+load().catch((err) => {
+  document.getElementById('tiles').innerHTML =
+    `<div class="tile"><div class="label">Error</div><div class="sub">${esc(err.message)}</div></div>`;
+});
+</script>
+</body>
+</html>
